@@ -22,19 +22,15 @@
         #pdf-container {
             width: 100%;
             height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             overflow: auto;
             position: relative;
         }
 
-        #pdf-canvas {
-            max-width: 100%;
-            max-height: 100%;
-            display: block;
+        #pdf-embed {
+            width: 100%;
+            height: 100%;
+            transform-origin: top left;
             transition: transform 0.2s ease;
-            transform-origin: center center;
         }
 
         #zoom-controls {
@@ -47,6 +43,7 @@
             padding: 8px;
             border: 1px solid #000;
             backdrop-filter: blur(10px);
+            z-index: 1000;
         }
 
         .zoom-btn {
@@ -72,26 +69,11 @@
         .zoom-btn:active {
             transform: scale(0.95);
         }
-
-        #loading {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 14px;
-            color: #666;
-            letter-spacing: 0.05em;
-        }
-
-        .hidden {
-            display: none;
-        }
     </style>
 </head>
 <body>
-    <div id="loading">LOADING...</div>
     <div id="pdf-container">
-        <canvas id="pdf-canvas"></canvas>
+        <embed id="pdf-embed" src="aiteahouse-workflow-diagram.pdf#toolbar=0&navpanes=0&scrollbar=1" type="application/pdf">
     </div>
     <div id="zoom-controls">
         <button class="zoom-btn" id="zoom-out" title="Zoom Out">−</button>
@@ -99,80 +81,55 @@
         <button class="zoom-btn" id="zoom-in" title="Zoom In">+</button>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
-        // PDF.js setup
-        const pdfjsLib = window['pdfjs-dist/build/pdf'];
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-        let pdfDoc = null;
-        let currentScale = 1.0;
-        const canvas = document.getElementById('pdf-canvas');
-        const ctx = canvas.getContext('2d');
-        const loading = document.getElementById('loading');
+        let currentZoom = 1.0;
+        const pdfEmbed = document.getElementById('pdf-embed');
         const container = document.getElementById('pdf-container');
-
-        // Load PDF
-        const url = 'aiteahouse-workflow-diagram.pdf';
-
-        pdfjsLib.getDocument(url).promise.then(pdf => {
-            pdfDoc = pdf;
-            renderPage(1);
-            loading.classList.add('hidden');
-        }).catch(error => {
-            console.error('Error loading PDF:', error);
-            loading.textContent = 'ERROR LOADING PDF';
-        });
-
-        function renderPage(pageNumber) {
-            pdfDoc.getPage(pageNumber).then(page => {
-                const viewport = page.getViewport({ scale: currentScale });
-                
-                // Set canvas dimensions
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-
-                // Render PDF page
-                const renderContext = {
-                    canvasContext: ctx,
-                    viewport: viewport
-                };
-                
-                page.render(renderContext);
-            });
-        }
 
         // Zoom controls
         document.getElementById('zoom-in').addEventListener('click', () => {
-            currentScale += 0.25;
-            renderPage(1);
+            currentZoom += 0.25;
+            applyZoom();
         });
 
         document.getElementById('zoom-out').addEventListener('click', () => {
-            if (currentScale > 0.5) {
-                currentScale -= 0.25;
-                renderPage(1);
+            if (currentZoom > 0.5) {
+                currentZoom -= 0.25;
+                applyZoom();
             }
         });
 
         document.getElementById('zoom-reset').addEventListener('click', () => {
-            currentScale = 1.0;
-            renderPage(1);
+            currentZoom = 1.0;
+            applyZoom();
+            container.scrollTop = 0;
+            container.scrollLeft = 0;
         });
+
+        function applyZoom() {
+            pdfEmbed.style.transform = `scale(${currentZoom})`;
+            pdfEmbed.style.width = `${100 / currentZoom}%`;
+            pdfEmbed.style.height = `${100 / currentZoom}%`;
+        }
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === '+' || e.key === '=') {
-                currentScale += 0.25;
-                renderPage(1);
+                e.preventDefault();
+                currentZoom += 0.25;
+                applyZoom();
             } else if (e.key === '-') {
-                if (currentScale > 0.5) {
-                    currentScale -= 0.25;
-                    renderPage(1);
+                e.preventDefault();
+                if (currentZoom > 0.5) {
+                    currentZoom -= 0.25;
+                    applyZoom();
                 }
             } else if (e.key === '0') {
-                currentScale = 1.0;
-                renderPage(1);
+                e.preventDefault();
+                currentZoom = 1.0;
+                applyZoom();
+                container.scrollTop = 0;
+                container.scrollLeft = 0;
             }
         });
     </script>
