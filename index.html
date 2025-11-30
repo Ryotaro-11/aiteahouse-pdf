@@ -2,19 +2,22 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>AI Tea House - Workflow Diagram</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
             background: #ffffff;
             overflow: hidden;
+            touch-action: none;
         }
 
         #pdf-container {
@@ -24,18 +27,30 @@
             align-items: center;
             justify-content: center;
             background: #ffffff;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #pdf-wrapper {
+            position: relative;
+            cursor: grab;
+        }
+
+        #pdf-wrapper.dragging {
+            cursor: grabbing;
         }
 
         #pdf-canvas {
-            max-width: 100%;
-            max-height: 100%;
+            max-width: none;
+            max-height: none;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            display: block;
         }
 
         #zoom-controls {
             position: fixed;
-            bottom: 30px;
-            right: 30px;
+            bottom: 20px;
+            right: 20px;
             display: flex;
             gap: 1px;
             background: rgba(0, 0, 0, 0.15);
@@ -46,18 +61,19 @@
         }
 
         .zoom-btn {
-            width: 44px;
-            height: 44px;
+            width: 50px;
+            height: 50px;
             background: rgba(255, 255, 255, 0.9);
             border: none;
             cursor: pointer;
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 300;
             color: #000;
             transition: all 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .zoom-btn:first-child {
@@ -68,12 +84,8 @@
             border-radius: 0 2px 2px 0;
         }
 
-        .zoom-btn:hover {
-            background: rgba(255, 255, 255, 1);
-            transform: scale(1.05);
-        }
-
         .zoom-btn:active {
+            background: rgba(255, 255, 255, 1);
             transform: scale(0.95);
         }
 
@@ -90,12 +102,35 @@
         .hidden {
             display: none;
         }
+
+        /* Mobile specific */
+        @media (max-width: 768px) {
+            #zoom-controls {
+                bottom: 15px;
+                right: 15px;
+            }
+
+            .zoom-btn {
+                width: 48px;
+                height: 48px;
+                font-size: 20px;
+            }
+        }
+
+        @media (hover: hover) {
+            .zoom-btn:hover {
+                background: rgba(255, 255, 255, 1);
+                transform: scale(1.05);
+            }
+        }
     </style>
 </head>
 <body>
     <div id="loading">LOADING...</div>
     <div id="pdf-container">
-        <canvas id="pdf-canvas"></canvas>
+        <div id="pdf-wrapper">
+            <canvas id="pdf-canvas"></canvas>
+        </div>
     </div>
     
     <div id="zoom-controls">
@@ -115,6 +150,18 @@
         const canvas = document.getElementById('pdf-canvas');
         const ctx = canvas.getContext('2d');
         const loading = document.getElementById('loading');
+        const wrapper = document.getElementById('pdf-wrapper');
+        const container = document.getElementById('pdf-container');
+
+        // Pan/drag variables
+        let isPanning = false;
+        let startX, startY;
+        let translateX = 0, translateY = 0;
+        let currentTranslateX = 0, currentTranslateY = 0;
+
+        // Pinch zoom variables
+        let initialDistance = 0;
+        let initialScale = 1;
 
         // Load PDF
         const url = 'aiteahouse-workflow-diagram.pdf';
@@ -149,25 +196,134 @@
                     viewport: scaledViewport
                 };
 
-                page.render(renderContext);
+                page.render(renderContext).promise.then(() => {
+                    updateTransform();
+                });
             });
         }
 
+        function updateTransform() {
+            wrapper.style.transform = `translate(${currentTranslateX}px, ${currentTranslateY}px)`;
+        }
+
+        // Mouse/Touch drag for panning
+        function handleStart(e) {
+            if (scale <= 1.0) return; // Only allow panning when zoomed in
+            
+            isPanning = true;
+            wrapper.classList.add('dragging');
+            
+            if (e.type === 'mousedown') {
+                startX = e.clientX - currentTranslateX;
+                startY = e.clientY - currentTranslateY;
+            } else {
+                if (e.touches.length === 1) {
+                    startX = e.touches[0].clientX - currentTranslateX;
+                    startY = e.touches[0].clientY - currentTranslateY;
+                }
+            }
+        }
+
+        function handleMove(e) {
+            if (!isPanning) return;
+            if (e.type === 'touchmove' && e.touches.length !== 1) return;
+            
+            e.preventDefault();
+            
+            if (e.type === 'mousemove') {
+                currentTranslateX = e.clientX - startX;
+                currentTranslateY = e.clientY - startY;
+            } else {
+                currentTranslateX = e.touches[0].clientX - startX;
+                currentTranslateY = e.touches[0].clientY - startY;
+            }
+            
+            updateTransform();
+        }
+
+        function handleEnd() {
+            isPanning = false;
+            wrapper.classList.remove('dragging');
+        }
+
+        // Pinch zoom for touch devices
+        function getTouchDistance(e) {
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function handleTouchStart(e) {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                initialDistance = getTouchDistance(e);
+                initialScale = scale;
+            } else if (e.touches.length === 1) {
+                handleStart(e);
+            }
+        }
+
+        function handleTouchMove(e) {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const currentDistance = getTouchDistance(e);
+                const scaleChange = currentDistance / initialDistance;
+                scale = Math.max(0.4, Math.min(5, initialScale * scaleChange));
+                renderPage(pageNum);
+            } else if (e.touches.length === 1 && isPanning) {
+                handleMove(e);
+            }
+        }
+
+        // Event listeners
+        wrapper.addEventListener('mousedown', handleStart);
+        document.addEventListener('mousemove', handleMove);
+        document.addEventListener('mouseup', handleEnd);
+
+        wrapper.addEventListener('touchstart', handleTouchStart);
+        wrapper.addEventListener('touchmove', handleTouchMove);
+        wrapper.addEventListener('touchend', handleEnd);
+
+        // Double tap to zoom
+        let lastTap = 0;
+        wrapper.addEventListener('touchend', function(e) {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
+            if (tapLength < 300 && tapLength > 0) {
+                e.preventDefault();
+                if (scale === 1.0) {
+                    scale = 2.0;
+                } else {
+                    scale = 1.0;
+                    currentTranslateX = 0;
+                    currentTranslateY = 0;
+                }
+                renderPage(pageNum);
+            }
+            lastTap = currentTime;
+        });
+
         // Zoom controls
         document.getElementById('zoom-in').addEventListener('click', function() {
-            scale += 0.2;
+            scale = Math.min(5, scale + 0.2);
             renderPage(pageNum);
         });
 
         document.getElementById('zoom-out').addEventListener('click', function() {
             if (scale > 0.4) {
-                scale -= 0.2;
+                scale = Math.max(0.4, scale - 0.2);
+                if (scale <= 1.0) {
+                    currentTranslateX = 0;
+                    currentTranslateY = 0;
+                }
                 renderPage(pageNum);
             }
         });
 
         document.getElementById('zoom-reset').addEventListener('click', function() {
             scale = 1.0;
+            currentTranslateX = 0;
+            currentTranslateY = 0;
             renderPage(pageNum);
         });
 
@@ -176,21 +332,30 @@
             renderPage(pageNum);
         });
 
-        // Keyboard shortcuts
+        // Keyboard shortcuts (desktop only)
         document.addEventListener('keydown', function(e) {
             if (e.key === '+' || e.key === '=') {
-                scale += 0.2;
+                scale = Math.min(5, scale + 0.2);
                 renderPage(pageNum);
             } else if (e.key === '-') {
                 if (scale > 0.4) {
-                    scale -= 0.2;
+                    scale = Math.max(0.4, scale - 0.2);
                     renderPage(pageNum);
                 }
             } else if (e.key === '0') {
                 scale = 1.0;
+                currentTranslateX = 0;
+                currentTranslateY = 0;
                 renderPage(pageNum);
             }
         });
+
+        // Prevent default touch behaviors
+        document.addEventListener('touchmove', function(e) {
+            if (e.touches.length > 1) {
+                e.preventDefault();
+            }
+        }, { passive: false });
     </script>
 </body>
 </html>
